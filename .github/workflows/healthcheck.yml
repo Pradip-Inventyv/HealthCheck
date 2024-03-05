@@ -1,0 +1,56 @@
+name: Node.js CI with Docker
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    environment: "development"
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '14'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Docker Image
+        run: docker build -t pradippipaliya/ci-cd:latest .
+
+      - name: Run Container for Health Check
+        run: |
+          docker run -d --name ci-cd-container -p 127.0.0.1:7050:7050 pradippipaliya/ci-cd:latest
+          sleep 10  # Adjust sleep as needed to wait for app to initialize
+
+      - name: Output Docker Container Logs
+        run: docker logs ci-cd-container
+
+
+      - name: Health Check
+        id: healthcheck
+        run: |
+          response=$(curl --write-out '%{http_code}' --silent --output /dev/null http://127.0.0.1:7050/health-check)
+          if [ "$response" -ne 200 ]; then
+            echo "Health check failed with status $response"
+            exit 1
+          fi
+          echo "Health check passed with status $response"
+
+      - name: Login to Docker Hub
+      # if: success()  # Proceed if previous steps succeededff
+        if: steps.healthcheck.outcome == 'success'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }} 
+
+      - name: Push Docker Image to Docker Hub
+        run: docker push pradippipaliya/ci-cd:latest
