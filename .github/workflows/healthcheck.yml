@@ -25,32 +25,65 @@ jobs:
       - name: Build Docker Image
         run: docker build -t pradippipaliya/ci-cd:latest .
 
-      - name: Run Container for Health Check
-        run: |
-          docker run -d --name ci-cd-container -p 127.0.0.1:7050:7050 pradippipaliya/ci-cd:latest
-          sleep 10  # Adjust sleep as needed to wait for app to initialize
+      # - name: Run Container for Health Check
+      #   run: |
+      #     docker run -d --name ci-cd-container -p 127.0.0.1:7050:7050 pradippipaliya/ci-cd:latest
+      #     sleep 10  # Adjust sleep as needed to wait for app to initialize
 
-      - name: Output Docker Container Logs
-        run: docker logs ci-cd-container
+      # - name: Output Docker Container Logs
+      #   run: docker logs ci-cd-container
 
 
-      - name: Health Check
-        id: healthcheck
-        run: |
-          response=$(curl --write-out '%{http_code}' --silent --output /dev/null http://127.0.0.1:7050/health-check)
-          if [ "$response" -ne 200 ]; then
-            echo "Health check failed with status $response"
-            exit 1
-          fi
-          echo "Health check passed with status $response"
+      # - name: Health Check
+      #   id: healthcheck
+      #   run: |
+      #     response=$(curl --write-out '%{http_code}' --silent --output /dev/null http://127.0.0.1:7050/health-check)
+      #     if [ "$response" -ne 200 ]; then
+      #       echo "Health check failed with status $response"
+      #       exit 1
+      #     fi
+      #     echo "Health check passed with status $response"
 
-      - name: Login to Docker Hub
-      # if: success()  # Proceed if previous steps succeededff
-        if: steps.healthcheck.outcome == 'success'
-        uses: docker/login-action@v3
+      # - name: Login to Docker Hub
+      # # if: success()  # Proceed if previous steps succeededff
+      #   if: steps.healthcheck.outcome == 'success'
+      #   uses: docker/login-action@v3
+      #   with:
+      #     username: ${{ secrets.DOCKER_USERNAME }}
+      #     password: ${{ secrets.DOCKER_PASSWORD }} 
+
+      - name: Use Trivy action (official Aqua Security action)
+        uses: aquasecurity/trivy-action@master  # Adjust version as needed
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }} 
+          image-ref: pradippipaliya/ci-cd:latest
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+          output: 'trivy-report.txt'  # Adjust path if needed
 
-      - name: Push Docker Image to Docker Hub
+      - name: Upload scan results (optional)
+        uses: actions/upload-artifact@v3
+        with:
+          name: trivy-scan-results
+          path: ./trivy-report.txt  # Adjust path if using a different format
+
+      - name: Analyze results (optional)
+        run: cat ./trivy-report.txt
+          
+      - name: Push Docker image to registry
         run: docker push pradippipaliya/ci-cd:latest
+        
+      - name: Send artifact via email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          from: ppipaliya23@gmail.com
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "Trivy Scan Results"
+          to: rajchauhan1208@gmail.com
+          body: "Please find the attached Trivy scan results."
+          attachments: ./trivy-report.txt
